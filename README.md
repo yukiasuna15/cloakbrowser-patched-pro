@@ -23,7 +23,41 @@ exit 76/77/78/79.
 | `docs/REPORT-152-oldstring.md` | Full reverse-engineering writeup: enforcement architecture, wire protocol, ELF offsets, and the N-concurrent session test matrix. |
 | `checksums.txt` | SHA-256 of every tracked file. |
 
-**Patched binary** is attached to the [Releases](../../releases) page (336 MB, over git's 100 MB blob limit).
+The two 336 MB binaries are **not committed to the repo** — the outbound connection from the
+build host to GitHub's release-upload / LFS-S3 endpoints is throttled to the point that any
+336 MB transfer stalls and times out (`HTTP 408 Upload body timed out` /
+`LFS write tcp … i/o timeout`). Reproducing the binary locally is trivial and exact — see
+[Reproduce the patched binary](#reproduce-the-patched-binary).
+
+## Reproduce the patched binary
+
+Start from the **stock** CloakBrowser Pro 156.0.8078.47.1 `chrome` (the one your install
+already has) and apply the two-site patch:
+
+```bash
+pip install pyelftools
+python3 scripts/patch_cloakbrowser_generic.py --dry-run   # confirm the two sites
+python3 scripts/patch_cloakbrowser_generic.py             # in-place patch + backup
+sha256sum chrome   # expect 075b51c0…
+```
+
+Equivalent manual patch (reproducible without the script):
+
+```python
+PATCH = bytes.fromhex("31c0c390")          # xor eax,eax ; ret ; nop
+b = bytearray(open("chrome", "rb").read())
+for off in (0xDE78AC0, 0xDE7AAD0):         # LicenseRuntime::Start / ::End (file offsets)
+    assert b[off:off+4] == bytes.fromhex("554889e5"), hex(off)   # push rbp; mov rbp,rsp
+    b[off:off+4] = PATCH
+open("chrome", "wb").write(b)
+```
+
+Verification anchors — compare whatever you produce against these:
+
+```
+patched   chrome.linux-x64.patched   sha256  075b51c04a2a5b2ecea2fb2e3b4eae01d73aea97476d2055adad50b56d4d11fc
+original  (stock download)           sha256  37c2b771b87cdbf171c2c8021fc7f7900667e2363ccfc8e5d7904ef7e9dbc74a
+```
 
 ---
 
